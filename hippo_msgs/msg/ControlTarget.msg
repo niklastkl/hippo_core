@@ -11,6 +11,14 @@ uint32 IGNORE_ANG_ACCELERATION = 32
 uint32 IGNORE_POSE = 9
 uint32 IGNORE_ACCELERATIONS = 36
 
+uint32 IGNORE_POSITION_X = 64
+uint32 IGNORE_POSITION_Y = 128
+uint32 IGNORE_POSITION_Z = 256
+
+uint32 IGNORE_ATTITUDE_X = 512
+uint32 IGNORE_ATTITUDE_Y = 1024
+uint32 IGNORE_ATTITUDE_Z = 2048
+
 geometry_msgs/Point position
 geometry_msgs/Vector3 velocity
 geometry_msgs/Vector3 acceleration
