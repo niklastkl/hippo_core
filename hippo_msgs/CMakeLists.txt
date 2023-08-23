@@ -39,6 +39,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RatesDebug.msg"
   "msg/RatesTarget.msg"
   "msg/ThrusterForces.msg"
+  "msg/VelocityControlTarget.msg"
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
 )
 
