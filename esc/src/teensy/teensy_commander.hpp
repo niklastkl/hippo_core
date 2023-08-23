@@ -12,6 +12,13 @@
 
 namespace esc {
 namespace teensy {
+
+constexpr int n_coeffs = 3;
+
+inline double interpolate(const double &x, const double &x_low, const double &x_up, const double &y_low, const double &y_up){
+    return (y_up - y_low) / (x_up - x_low) * (x - x_low);
+}
+
 class TeensyCommander : public rclcpp::Node {
  public:
   static constexpr int kThrottleInputTimeoutMs = 500;
@@ -32,6 +39,7 @@ class TeensyCommander : public rclcpp::Node {
   void InitServices();
   void SetThrottle(const std::array<double, 8> &_values);
   void SetThrottle(double _value);
+  uint16_t InputToPWM(double input);
   void PublishArmingState();
   void PublishBatteryVoltage();
   void PublishThrusterValues(std::array<double, 8> &_values);
@@ -90,6 +98,19 @@ class TeensyCommander : public rclcpp::Node {
   bool timed_out_{true};
   bool armed_{false};
   double battery_voltage_{0.0};
+
+  struct Coefficients{
+      std::array<double, n_coeffs> forward;
+      std::array<double, n_coeffs> backward;
+      double voltage;
+  };
+
+  struct MappingCoefficients{
+      Coefficients upper;
+      Coefficients lower;
+  };
+
+  MappingCoefficients mapping_coeffs_;
 
   esc_serial::Packet packet_;
 };

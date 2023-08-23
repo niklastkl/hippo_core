@@ -1,0 +1,12 @@
+/**: # wildcard for the node name
+  ros__parameters:
+
+    coeffs_rpm_pwm: # coefficients calculating relation rpm->pwm for an input [-1, 1] to [1000, 2000] [mus]
+      lower: # lower voltage bound
+        voltage: 14 # V
+        backward: [ -259.02694779  189.34017778 1485.53544817 ]
+        forward: [ 207.83735345  235.18987786 1507.77149626]
+      upper:
+        voltage: 16 # V
+        backward: [ -216.94302047  188.39531303 1489.03973649 ]
+        forward: [ 185.5935306   213.82420443 1507.44112803 ]
