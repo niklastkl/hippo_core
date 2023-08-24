@@ -53,6 +53,7 @@ class TeensyCommander : public rclcpp::Node {
   void PublishArmingState();
   void PublishBatteryVoltage();
   void PublishThrusterValues(std::array<double, 8> &_values);
+  void PublishPWMValues(esc_serial::ActuatorControlsMessage &_msg);
 
   void HandleActuatorControlsMessage(esc_serial::ActuatorControlsMessage &_msg);
   void HandleBatteryVoltageMessage(esc_serial::BatteryVoltageMessage &_msg);
@@ -66,6 +67,8 @@ class TeensyCommander : public rclcpp::Node {
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr battery_voltage_pub_;
   rclcpp::Publisher<hippo_msgs::msg::ActuatorControls>::SharedPtr
       actuator_controls_pub_;
+  rclcpp::Publisher<hippo_msgs::msg::ActuatorControls>::SharedPtr
+      pwm_output_debug_pub_;
   //////////////////////////////////////////////////////////////////////////////
   // Subscribers
   //////////////////////////////////////////////////////////////////////////////

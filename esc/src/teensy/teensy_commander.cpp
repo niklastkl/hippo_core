@@ -91,6 +91,9 @@ namespace esc {
             topic = "thruster_values";
             actuator_controls_pub_ = create_publisher<hippo_msgs::msg::ActuatorControls>(
                     topic, rclcpp::SystemDefaultsQoS());
+            topic = "debug_pwm_output";
+            pwm_output_debug_pub_ = create_publisher<hippo_msgs::msg::ActuatorControls>(
+                    topic, rclcpp::SystemDefaultsQoS());
         }
 
         void TeensyCommander::InitSubscribers() {
@@ -204,6 +207,7 @@ namespace esc {
                 uint16_t pwm = InputToPWM(std::clamp(_values[i], -1.0, 1.0));
                 msg.payload_.pwm[i] = pwm;
             }
+            PublishPWMValues(msg);
             size_t size =
                     msg.Serialize(packet.MutablePayloadStart(), packet.PayloadCapacity());
             if (!size) {
@@ -262,6 +266,19 @@ namespace esc {
             msg.control = _values;
             msg.header.stamp = now();
             actuator_controls_pub_->publish(msg);
+        }
+
+        void TeensyCommander::PublishPWMValues(esc_serial::ActuatorControlsMessage &_msg) {
+            if (!pwm_output_debug_pub_) {
+                RCLCPP_WARN(get_logger(), "PWM Values Publisher not available.");
+                return;
+            }
+            hippo_msgs::msg::ActuatorControls msg;
+            for (int i = 0; i < 8; i++){
+                msg.control[i] = double(_msg.payload_.pwm[i]);
+            }
+            msg.header.stamp = now();
+            pwm_output_debug_pub_->publish(msg);
         }
 
         bool TeensyCommander::InitSerial(std::string _port_name) {
