@@ -113,7 +113,7 @@ install(PROGRAMS
 # install shared resources
 ################################################################################
 install(
-  DIRECTORY launch
+  DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )
 

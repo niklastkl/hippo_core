@@ -14,17 +14,18 @@ namespace esc {
             descriptor = hippo_common::param_utils::Description(description, true);
             {
                 auto &param = params_.serial_port;
-                param = declare_parameter(name, param, descriptor);
+                param = this->declare_parameter(name, param, descriptor);
             }
 
             name = "zero_rpm_threshold";
             description = "Threshold below which the input is interpreted as zero";
             descriptor = hippo_common::param_utils::Description(description, true);
-            zero_rpm_threshold_ = declare_parameter(name, zero_rpm_threshold_, descriptor);
+            zero_rpm_threshold_ = this->declare_parameter(name, zero_rpm_threshold_, descriptor);
 
 
             std::vector<std::string> prefixes = {"lower.", "upper."};
             std::vector<std::string> description_prefixes = {"lower", "upper"};
+            std::vector<std::string> suffix_coeffs = {"quad", "lin", "const"};
             for (int i = 0; i < int(prefixes.size()); i++) {
                 Coefficients *coeffs;
                 if (i == 0) {
@@ -36,34 +37,19 @@ namespace esc {
                 name = "coeffs_rpm_pwm." + prefixes[i] + "voltage";
                 description = description_prefixes[i] + "voltage bound for determined coefficients";
                 descriptor = hippo_common::param_utils::Description(description, true);
-                coeffs->voltage = declare_parameter(name, 15.0, descriptor);
+                coeffs->voltage = this->declare_parameter(name, 15.0, descriptor);
 
-                std::vector<double> default_coeffs = {0.0, 500.0, 1500.0};
-                std::vector<double> loaded_coeffs;
-                name = "coeffs_rpm_pwm." + prefixes[i] + "forward";
-                description = description_prefixes[i] + " coefficients for forward turning direction";
-                descriptor = hippo_common::param_utils::Description(description, true);
-                loaded_coeffs = declare_parameter(name, default_coeffs, descriptor);
-                if (loaded_coeffs.size() != n_coeffs) {
-                    coeffs->forward = {0.0, 500.0, 1500.0};
-                    RCLCPP_ERROR(this->get_logger(), "%s", ("Dimension of declared mapping coefficients" +
-                                                            std::to_string(int(loaded_coeffs.size())) +
-                                                            "is unequal " + std::to_string(n_coeffs) +"!").c_str());
-                } else {
-                    std::copy(loaded_coeffs.begin(), loaded_coeffs.end(), coeffs->forward.begin());
-                }
+                std::array<double, n_coeffs> default_coeffs = {0.0, 500.0, 1500.0};
+                for (int j = 0; j < n_coeffs; j++) {
+                    name = "coeffs_rpm_pwm." + prefixes[i] + "forward." + suffix_coeffs[j];
+                    description = description_prefixes[i] + suffix_coeffs[j] + " coefficient for forward turning direction";
+                    descriptor = hippo_common::param_utils::Description(description, true);
+                    coeffs->forward[j] = this->declare_parameter(name, default_coeffs[j], descriptor);
 
-                name = "coeffs_rpm_pwm." + prefixes[i] + "backward";
-                description = description_prefixes[i] + " coefficients for forward turning direction";
-                descriptor = hippo_common::param_utils::Description(description, true);
-                loaded_coeffs = declare_parameter(name, default_coeffs, descriptor);
-                if (loaded_coeffs.size() != n_coeffs) {
-                    coeffs->backward = {0.0, 500.0, 1500.0};
-                    RCLCPP_ERROR(this->get_logger(), "%s", ("Dimension of declared mapping coefficients" +
-                                                            std::to_string(int(loaded_coeffs.size())) +
-                                                            "is unequal " + std::to_string(n_coeffs) +"!").c_str());
-                } else {
-                    std::copy(loaded_coeffs.begin(), loaded_coeffs.end(), coeffs->backward.begin());
+                    name = "coeffs_rpm_pwm." + prefixes[i] + "backward." + suffix_coeffs[j];
+                    description = description_prefixes[i] + suffix_coeffs[j] + " coefficients for forward turning direction";
+                    descriptor = hippo_common::param_utils::Description(description, true);
+                    coeffs->backward[j] = this->declare_parameter(name, default_coeffs[j], descriptor);
                 }
             }
 
