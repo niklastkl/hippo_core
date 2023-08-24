@@ -152,9 +152,6 @@ namespace esc {
             double pwm = 0;
             for (int i = 0; i < n_coeffs; i++) {
                 if (input >= 0) {
-                    std::cout << "Coeff " << i << ": " << interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                                      mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) << "multiplied with " <<
-                                                                                                                                                                std::to_string(std::pow(input, double(n_coeffs - 1 - i))) << std::endl;
                     pwm += interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
                                         mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) *
                             std::pow(input, double(n_coeffs - 1 - i));
