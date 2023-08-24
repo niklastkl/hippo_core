@@ -143,22 +143,52 @@ namespace esc {
         }
 
         uint16_t TeensyCommander::InputToPWM(double input) {
+            if (std::abs(input) < zero_rpm_threshold_){
+                return uint16_t(1500);
+            }
             uint16_t pwm = 0;
             for (int i = 0; i < n_coeffs; i++) {
                 if (input >= 0) {
                     pwm += static_cast<uint8_t>(
                             interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
                                         mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) *
-                            std::pow(input, double(i)));
+                            std::pow(input, double(n_coeffs - 1 - i)));
                 } else {
                     pwm += static_cast<uint8_t>(
                             interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
                                         mapping_coeffs_.lower.backward[i], mapping_coeffs_.upper.backward[i]) *
-                            std::pow(input, double(i)));
+                            std::pow(input, double(n_coeffs - 1 - i)));
                 }
             }
             return pwm;
         }
+
+        double TeensyCommander::PWMToInput(uint16_t pwm){
+            const double upper_limit_deadzone = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                            mapping_coeffs_.lower.forward.back(), mapping_coeffs_.upper.forward.back());
+            const double lower_limit_deadzone = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                            mapping_coeffs_.lower.backward.back(), mapping_coeffs_.upper.backward.back());
+            if (double(pwm) > lower_limit_deadzone && double(pwm) < upper_limit_deadzone){
+                return 0.0;
+            } else if (pwm > 1500){
+                const double quadratic_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.forward[0], mapping_coeffs_.upper.forward[0]);
+                const double linear_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.forward[1], mapping_coeffs_.upper.forward[1]);
+                const double constant_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.forward[2], mapping_coeffs_.upper.forward[2]);
+                return inverseSecondOrderPolynomial(double(pwm), quadratic_coeff, linear_coeff, constant_coeff);
+            } else {
+                const double quadratic_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.backward[0], mapping_coeffs_.upper.backward[0]);
+                const double linear_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                        mapping_coeffs_.lower.backward[1], mapping_coeffs_.upper.backward[1]);
+                const double constant_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                          mapping_coeffs_.lower.backward[2], mapping_coeffs_.upper.backward[2]);
+                return inverseSecondOrderPolynomial(double(pwm), quadratic_coeff, linear_coeff, constant_coeff);
+            }
+        }
+
 
         void TeensyCommander::SetThrottle(const std::array<double, 8> &_values) {
             if (!serial_initialized_) {
@@ -267,7 +297,7 @@ namespace esc {
                 esc_serial::ActuatorControlsMessage &_msg) {
             std::array<double, 8> values;
             for (int i = 0; i < 8; ++i) {
-                values[i] = (_msg.payload_.pwm[i] - 1500) / 500.0;
+                values[i] = PWMToInput(_msg.payload_.pwm[i]);
             }
             PublishThrusterValues(values);
         }
