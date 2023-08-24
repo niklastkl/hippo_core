@@ -149,21 +149,22 @@ namespace esc {
             if (std::abs(input) < zero_rpm_threshold_){
                 return uint16_t(1500);
             }
-            uint16_t pwm = 0;
+            double pwm = 0;
             for (int i = 0; i < n_coeffs; i++) {
                 if (input >= 0) {
-                    pwm += static_cast<uint8_t>(
-                            interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                    std::cout << "Coeff " << i << ": " << interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                                                      mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) << "multiplied with " <<
+                                                                                                                                                                std::to_string(std::pow(input, double(n_coeffs - 1 - i))) << std::endl;
+                    pwm += interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
                                         mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) *
-                            std::pow(input, double(n_coeffs - 1 - i)));
+                            std::pow(input, double(n_coeffs - 1 - i));
                 } else {
-                    pwm += static_cast<uint8_t>(
-                            interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                    pwm += interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
                                         mapping_coeffs_.lower.backward[i], mapping_coeffs_.upper.backward[i]) *
-                            std::pow(input, double(n_coeffs - 1 - i)));
+                            std::pow(input, double(n_coeffs - 1 - i));
                 }
             }
-            return pwm;
+            return std::clamp(uint16_t(pwm), uint16_t(1000), uint16_t(2000));
         }
 
         double TeensyCommander::PWMToInput(uint16_t pwm){
