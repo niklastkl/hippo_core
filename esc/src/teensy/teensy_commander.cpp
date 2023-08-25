@@ -146,46 +146,62 @@ namespace esc {
         }
 
         uint16_t TeensyCommander::InputToPWM(double input) {
-            if (std::abs(input) < zero_rpm_threshold_){
+            if (std::abs(input) < zero_rpm_threshold_) {
                 return uint16_t(1500);
             }
             double pwm = 0;
             for (int i = 0; i < n_coeffs; i++) {
                 if (input >= 0) {
-                    pwm += interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                        mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) *
-                            std::pow(input, double(n_coeffs - 1 - i));
+                    pwm += interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                       mapping_coeffs_.lower.forward[i], mapping_coeffs_.upper.forward[i]) *
+                           std::pow(input, double(n_coeffs - 1 - i));
                 } else {
-                    pwm += interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                        mapping_coeffs_.lower.backward[i], mapping_coeffs_.upper.backward[i]) *
-                            std::pow(input, double(n_coeffs - 1 - i));
+                    pwm += interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
+                                       mapping_coeffs_.lower.backward[i], mapping_coeffs_.upper.backward[i]) *
+                           std::pow(input, double(n_coeffs - 1 - i));
                 }
             }
             return std::clamp(uint16_t(pwm), uint16_t(1000), uint16_t(2000));
         }
 
-        double TeensyCommander::PWMToInput(uint16_t pwm){
-            const double upper_limit_deadzone = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                            mapping_coeffs_.lower.forward.back(), mapping_coeffs_.upper.forward.back());
-            const double lower_limit_deadzone = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                            mapping_coeffs_.lower.backward.back(), mapping_coeffs_.upper.backward.back());
-            if (double(pwm) > lower_limit_deadzone && double(pwm) < upper_limit_deadzone){
+        double TeensyCommander::PWMToInput(uint16_t pwm) {
+            const double upper_limit_deadzone = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                            mapping_coeffs_.upper.voltage,
+                                                            mapping_coeffs_.lower.forward.back(),
+                                                            mapping_coeffs_.upper.forward.back());
+            const double lower_limit_deadzone = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                            mapping_coeffs_.upper.voltage,
+                                                            mapping_coeffs_.lower.backward.back(),
+                                                            mapping_coeffs_.upper.backward.back());
+            if (double(pwm) > lower_limit_deadzone && double(pwm) < upper_limit_deadzone) {
                 return 0.0;
-            } else if (pwm > 1500){
-                const double quadratic_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                           mapping_coeffs_.lower.forward[0], mapping_coeffs_.upper.forward[0]);
-                const double linear_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                           mapping_coeffs_.lower.forward[1], mapping_coeffs_.upper.forward[1]);
-                const double constant_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                           mapping_coeffs_.lower.forward[2], mapping_coeffs_.upper.forward[2]);
+            } else if (pwm > 1500) {
+                const double quadratic_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                           mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.forward[0],
+                                                           mapping_coeffs_.upper.forward[0]);
+                const double linear_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                        mapping_coeffs_.upper.voltage,
+                                                        mapping_coeffs_.lower.forward[1],
+                                                        mapping_coeffs_.upper.forward[1]);
+                const double constant_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                          mapping_coeffs_.upper.voltage,
+                                                          mapping_coeffs_.lower.forward[2],
+                                                          mapping_coeffs_.upper.forward[2]);
                 return inverseSecondOrderPolynomial(double(pwm), quadratic_coeff, linear_coeff, constant_coeff);
             } else {
-                const double quadratic_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                           mapping_coeffs_.lower.backward[0], mapping_coeffs_.upper.backward[0]);
-                const double linear_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                        mapping_coeffs_.lower.backward[1], mapping_coeffs_.upper.backward[1]);
-                const double constant_coeff = interpolate(battery_voltage_, mapping_coeffs_.lower.voltage, mapping_coeffs_.upper.voltage,
-                                                          mapping_coeffs_.lower.backward[2], mapping_coeffs_.upper.backward[2]);
+                const double quadratic_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                           mapping_coeffs_.upper.voltage,
+                                                           mapping_coeffs_.lower.backward[0],
+                                                           mapping_coeffs_.upper.backward[0]);
+                const double linear_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                        mapping_coeffs_.upper.voltage,
+                                                        mapping_coeffs_.lower.backward[1],
+                                                        mapping_coeffs_.upper.backward[1]);
+                const double constant_coeff = interpolate(battery_voltage_mapping_, mapping_coeffs_.lower.voltage,
+                                                          mapping_coeffs_.upper.voltage,
+                                                          mapping_coeffs_.lower.backward[2],
+                                                          mapping_coeffs_.upper.backward[2]);
                 return inverseSecondOrderPolynomial(double(pwm), quadratic_coeff, linear_coeff, constant_coeff);
             }
         }
@@ -272,7 +288,7 @@ namespace esc {
                 return;
             }
             hippo_msgs::msg::ActuatorControls msg;
-            for (int i = 0; i < 8; i++){
+            for (int i = 0; i < 8; i++) {
                 msg.control[i] = double(_msg.payload_.pwm[i]);
             }
             msg.header.stamp = now();
@@ -320,6 +336,8 @@ namespace esc {
         void TeensyCommander::HandleBatteryVoltageMessage(
                 esc_serial::BatteryVoltageMessage &_msg) {
             battery_voltage_ = _msg.payload_.voltage_mv / 1000.0;
+            battery_voltage_mapping_ = std::min(std::max(battery_voltage_, mapping_coeffs_.lower.voltage),
+                                                mapping_coeffs_.upper.voltage);
         }
 
         void TeensyCommander::ReadSerial() {

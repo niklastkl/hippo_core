@@ -111,6 +111,7 @@ class TeensyCommander : public rclcpp::Node {
   bool timed_out_{true};
   bool armed_{false};
   double battery_voltage_{0.0};
+  double battery_voltage_mapping_{15.0}; //!< battery voltage used for rpm->pwm mapping, makes sure that battery voltage used for calculation is clamped at edges of expected range
   double zero_rpm_threshold_{0.0001};
 
   struct Coefficients{
