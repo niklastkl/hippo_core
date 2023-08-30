@@ -39,6 +39,7 @@ ActuatorMixerNode::ActuatorMixerNode(rclcpp::NodeOptions const &_options)
       this, get_clock(), std::chrono::milliseconds(kTimeoutMs),
       std::bind(&ActuatorMixerNode::WatchdogTimeout, this));
   RCLCPP_INFO(get_logger(), "Initialization complete.");
+  InitializeParamCallbacks();
 }
 
 void ActuatorMixerNode::WatchdogTimeout() {

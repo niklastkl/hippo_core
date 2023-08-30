@@ -17,9 +17,12 @@ class ActuatorMixerNode : public rclcpp::Node {
       const hippo_msgs::msg::ActuatorSetpoint::SharedPtr _msg);
   rcl_interfaces::msg::SetParametersResult OnThrustParams(
       const std::vector<rclcpp::Parameter> &_parameters);
+  rcl_interfaces::msg::SetParametersResult OnWeightingFactor(
+      const std::vector<rclcpp::Parameter> &_parameters);
 
  private:
   void DeclareParams();
+  void InitializeParamCallbacks();
   void WatchdogTimeout();
   void ResetThrust();
   void ResetTorque();
@@ -32,7 +35,11 @@ class ActuatorMixerNode : public rclcpp::Node {
   rclcpp::Publisher<hippo_msgs::msg::ActuatorControls>::SharedPtr
       actuator_controls_pub_;
 
-  rclcpp::TimerBase::SharedPtr watchdog_timer_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr thrust_param_cb_handle_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr weighting_cb_handle_;
+
+
+    rclcpp::TimerBase::SharedPtr watchdog_timer_;
 
   std::array<double, mixer_bluerov::InputChannels::kCount> inputs_;
   rclcpp::Time t_last_thrust_setpoint_;

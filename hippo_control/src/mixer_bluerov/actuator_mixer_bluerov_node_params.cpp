@@ -3,24 +3,10 @@
 namespace hippo_control {
 namespace mixer_bluerov {
 void ActuatorMixerNode::DeclareParams() {
-  /*
-    std::string name = "mixer_matrix";
-  size_t matrix_size;
-  auto mixer_matrix = declare_parameter<std::vector<double>>(
-      name, hippo_common::param_utils::Description("Mixer Matrix", true));
-
-  matrix_size = mixer_bluerov::kOutputChannels * mixer_bluerov::InputChannels::kCount;
-  if (mixer_matrix.size() != matrix_size) {
-    throw std::runtime_error("Invalid size of Mixer Matrix. Expected " +
-                             std::to_string(matrix_size) + " but got " +
-                             std::to_string(mixer_matrix.size()));
-  }
-  */
   size_t matrix_size;
   matrix_size = mixer_bluerov::kOutputChannels * mixer_bluerov::InputChannels::kCount;
 
   std::string name;
-  Eigen::Matrix<double, mixer_bluerov::InputChannels::kCount, mixer_bluerov::kOutputChannels> mixer_matrix;
   name = "geometry.alpha_f";
   double alpha_f = declare_parameter<double>(name, hippo_common::param_utils::Description("Thruster angle front", true));
   name = "geometry.alpha_r";
@@ -33,13 +19,7 @@ void ActuatorMixerNode::DeclareParams() {
   double l_vx = declare_parameter<double>(name, hippo_common::param_utils::Description("Thruster lever vertical x", true));
   name = "geometry.l_vy";
   double l_vy = declare_parameter<double>(name, hippo_common::param_utils::Description("Thruster lever vertical y", true));
-
-  mixer_matrix << 0, 0, 0, 0, -l_vy, -l_vy, l_vy, l_vy,
-                  0, 0, 0, 0, -l_vx, l_vx, -l_vx, l_vx,
-                  l_hf, -l_hf, l_hr, -l_hr, 0, 0, 0, 0,
-                  cos(alpha_f), cos(alpha_f), cos(alpha_r), cos(alpha_r), 0, 0, 0, 0,
-                  sin(alpha_f), -sin(alpha_f), -sin(alpha_r), sin(alpha_r), 0, 0, 0, 0,
-                  0, 0, 0, 0, 1, -1, -1, 1;
+  mixer_.InitializeMixerMatrix(alpha_f, alpha_r, l_hf, l_hr, l_vx, l_vy);
 
 
   name = "input_limits";
@@ -77,7 +57,6 @@ void ActuatorMixerNode::DeclareParams() {
     }
     mapping.output_scaling = output_scalings[i_out];
     mixer_.SetMapping(i_out, mapping);
-    mixer_.SetMixerMatrix(mixer_matrix);
   }
 
   name = "zero_throttle_threshold";
@@ -85,6 +64,12 @@ void ActuatorMixerNode::DeclareParams() {
   param = hippo_common::param_utils::Description(descr);
   auto zero_thrust_threshold = declare_parameter<double>(name, param);
   mixer_.SetZeroThrustThreshold(zero_thrust_threshold);
+
+  name = "compensate_deadzone";
+  descr = "Decides if the deadzone should be actively compensated.";
+  param = hippo_common::param_utils::Description(descr);
+  auto compensate_deadzone = declare_parameter<bool>(name, param);
+  mixer_.SetCompensateDeadZone(compensate_deadzone);
 
   std::unordered_map<int, std::string> prefixes;
   prefixes[mixer_bluerov::ThrustDirection::forward] = "forward.";
@@ -110,11 +95,36 @@ void ActuatorMixerNode::DeclareParams() {
     mixer_.SetQuadraticCoefficient(quadratic_coefficient, i);
 
     name = prefixes.at(i) + "minimum";
-    descr = "Minimum input value";
+    descr = "Minimum value for returned thrust";
     param = hippo_common::param_utils::Description(descr);
     auto minimum = declare_parameter<double>(name, param);
     mixer_.SetMinimum(minimum, i);
+
+    name = prefixes.at(i) + "deadzone_minimum";
+    descr = "Minimum deadzone bound";
+    param = hippo_common::param_utils::Description(descr);
+    auto deadzone_minimum = declare_parameter<double>(name, param);
+    mixer_.SetDeadzoneMinimum(deadzone_minimum, i);
+
   }
+
+  name = "weighting_last_input";
+  descr = "Weighting factor ";
+  param = hippo_common::param_utils::Description(descr);
+  auto weighting_factor = declare_parameter<double>(name, param);
+  mixer_.SetWeightingLastInput(weighting_factor);
+
+  name = "scaling_saturation_limit_up";
+  descr = "Upper limit for nullspace scaling of thrusters";
+  param = hippo_common::param_utils::Description(descr);
+  auto scaling_saturation_limit_up = declare_parameter<double>(name, param);
+  mixer_.SetScalingSaturationLimitUp(scaling_saturation_limit_up);
+
+  name = "scaling_saturation_limit_low";
+  descr = "Lower limit for nullspace scaling of thrusters";
+  param = hippo_common::param_utils::Description(descr);
+  auto scaling_saturation_limit_low = declare_parameter<double>(name, param);
+  mixer_.SetScalingSaturationLimitLow(scaling_saturation_limit_low);
 
   name = "max_rotations_per_second";
   descr = "The thrusters maximum rotations per second used for normalization.";
@@ -123,14 +133,21 @@ void ActuatorMixerNode::DeclareParams() {
   mixer_.SetMaxRotationsPerSecond(max_rotations_per_second);
 }
 
+void ActuatorMixerNode::InitializeParamCallbacks() {
+  thrust_param_cb_handle_ = this->add_on_set_parameters_callback(
+          std::bind(&ActuatorMixerNode::OnThrustParams, this, std::placeholders::_1));
+  weighting_cb_handle_ = this->add_on_set_parameters_callback(
+          std::bind(&ActuatorMixerNode::OnWeightingFactor, this, std::placeholders::_1));
+}
+
 rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnThrustParams(
     const std::vector<rclcpp::Parameter> &_parameters) {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
   result.reason = "Undhandled";
   std::unordered_map<int, std::string> prefixes;
-  prefixes.at(mixer_bluerov::ThrustDirection::forward) = "forward.";
-  prefixes.at(mixer_bluerov::ThrustDirection::backward) = "backward.";
+  prefixes[mixer_bluerov::ThrustDirection::forward] = "forward.";
+  prefixes[mixer_bluerov::ThrustDirection::backward] = "backward.";
   std::vector<int> idxs = {mixer_bluerov::ThrustDirection::forward, mixer_bluerov::ThrustDirection::backward};
   for (const rclcpp::Parameter &parameter : _parameters) {
     double tmp_double;
@@ -139,6 +156,8 @@ rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnThrustParams(
       if (hippo_common::param_utils::AssignIfMatch(
               parameter, prefixes.at(i) + "linear_coefficient", tmp_double)) {
         mixer_.SetLinearCoefficient(tmp_double, i);
+        RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                               std::to_string(tmp_double)).c_str());
         result.reason = "Set linear_coefficient.";
         found = true;
         break;
@@ -147,6 +166,8 @@ rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnThrustParams(
       if (hippo_common::param_utils::AssignIfMatch(
               parameter, prefixes.at(i) + "quadratic_coefficient", tmp_double)) {
         mixer_.SetQuadraticCoefficient(tmp_double, i);
+        RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                               std::to_string(tmp_double)).c_str());
         result.reason = "Set quadratic_coefficient.";
         found = true;
         break;
@@ -155,7 +176,29 @@ rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnThrustParams(
       if (hippo_common::param_utils::AssignIfMatch(
               parameter, prefixes.at(i) + "constant_coefficient", tmp_double)) {
         mixer_.SetConstantCoefficient(tmp_double, i);
+        RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                               std::to_string(tmp_double)).c_str());
         result.reason = "Set constant_coefficient.";
+        found = true;
+        break;
+      }
+
+      if (hippo_common::param_utils::AssignIfMatch(
+              parameter, prefixes.at(i) + "minimum", tmp_double)) {
+        mixer_.SetMinimum(tmp_double, i);
+        RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                               std::to_string(tmp_double)).c_str());
+        result.reason = "Set minimum value.";
+        found = true;
+        break;
+      }
+
+      if (hippo_common::param_utils::AssignIfMatch(
+              parameter, prefixes.at(i) + "deadzone_minimum", tmp_double)) {
+        mixer_.SetDeadzoneMinimum(tmp_double, i);
+        RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                               std::to_string(tmp_double)).c_str());
+        result.reason = "Set deadzone minimum value.";
         found = true;
         break;
       }
@@ -167,11 +210,33 @@ rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnThrustParams(
     if (hippo_common::param_utils::AssignIfMatch(
             parameter, "zero_thrust_threshold", tmp_double)) {
       mixer_.SetZeroThrustThreshold(tmp_double);
+      RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                             std::to_string(tmp_double)).c_str());
       result.reason = "Set zero_thrust_threshold";
       continue;
     }
   }
   return result;
 }
+
+rcl_interfaces::msg::SetParametersResult ActuatorMixerNode::OnWeightingFactor(
+        const std::vector<rclcpp::Parameter> &_parameters) {
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+  result.reason = "Undhandled";
+  for (const rclcpp::Parameter &parameter : _parameters) {
+    double tmp_double;
+    if (hippo_common::param_utils::AssignIfMatch(
+            parameter, "weighting_last_input", tmp_double)) {
+      mixer_.SetWeightingLastInput(tmp_double);
+      RCLCPP_INFO(this->get_logger(), "%s", ("Changed parameter " + parameter.get_name() + " to " +
+                                                  std::to_string(tmp_double)).c_str());
+      result.reason = "Set Weighting Parameter for last Input.";
+      break;
+    }
+  }
+  return result;
+}
+
 }  // namespace mixer
 }  // namespace hippo_control
