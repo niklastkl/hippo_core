@@ -183,7 +183,15 @@ namespace hippo_control {
           double limit_min = scaling_saturation_limit_low_ * RevsPerSecToThrust(thruster_models_[ThrustDirection::backward], max_rotations_per_second_);
           double limit_max = scaling_saturation_limit_up_ * RevsPerSecToThrust(thruster_models_[ThrustDirection::forward], max_rotations_per_second_);
 
-          if (compensate_deadzone_){
+          double abs_thrust_wrench = 0;
+          for (auto& input : _actuator_controls){
+              abs_thrust_wrench += std::abs(input);
+          }
+          if (abs_thrust_wrench < InputChannels::kCount * zero_throttle_threshold_){
+              for (int i_out = 0; i_out < kOutputChannels; ++i_out) {
+                  outputs_[i_out].total = 0.0;
+              }
+          } else if (compensate_deadzone_){
             Eigen::Matrix<double, InputChannels::kInputHorizontal, 1> input_vec_horizontal;
             for (int i = 0; i < InputChannels::kInputHorizontal; i++) {
               input_vec_horizontal(i) = _actuator_controls[InputChannels::kIdxsHorizontal[i]];
