@@ -135,6 +135,21 @@ namespace hippo_control {
                                       const Eigen::Matrix<double, size_input, 1> &force_input,
                                       const Eigen::Matrix<double, size_output, 1> &last_thruster) {
           Eigen::Matrix<double, size_output, 1> thrusters = M_inv * force_input;
+
+          if (IsSaturated(thrusters, limit_min, limit_max)) {
+            // scale linear to maximum, if any of the thrusters saturates
+            double max_scaling = 1.0;
+            for (int i = 0; i < size_output; ++i) {
+              double thrust = abs(thrusters(i));
+              if (thrusters(i) >= 0) {
+                max_scaling = std::max(max_scaling, thrust / abs(limit_max));
+              } else {
+                max_scaling = std::max(max_scaling, thrust / abs(limit_min));
+              }
+            }
+            return thrusters / max_scaling;
+          }
+
           bool thrusters_in_deadzone = false;
           for (int i = 0; i < size_output; i++) {
             if (IsInDeadZone(thrusters(i), deadzone_min, deadzone_max)) {
@@ -184,8 +199,6 @@ namespace hippo_control {
         double SimpleMixer::ApplyInput(
                 const std::array<double, InputChannels::kCount> &_actuator_controls) {
           ResetOutputs();
-          // scaling factor to scale the maximum output to 1.0, if any output is > 1.0
-          double scaling = 1.0;
 
           double limit_min = scaling_saturation_limit_low_ *
                              RevsPerSecToThrust(thruster_models_[ThrustDirection::backward], max_rotations_per_second_);  // negative, as scaling limit is negative. Mapping is in absolute values
@@ -213,21 +226,6 @@ namespace hippo_control {
                                                      thruster_models_[ThrustDirection::forward].deadzone_minimum,
                                                      limit_min, limit_max, input_vec_horizontal,
                                                      last_output_horizontal_);
-            // scale linear to maximum, if any of the thrusters saturates => if thruster saturates during deadzone
-            // shifting, algorithm is aborted for this scaling direction, however the instead returned minimum norm
-            // solution could still be infeasible
-            double max_scaling = 1.0;
-            for (int i = 0; i < kOutputHorizontal; ++i) {
-              double thrust = abs(output_vec_horizontal(i));
-              if (output_vec_horizontal(i) >= 0) {
-                max_scaling = std::max(max_scaling, thrust / abs(limit_max));
-              } else {
-                max_scaling = std::max(max_scaling, thrust / abs(limit_min));
-              }
-            }
-            output_vec_horizontal /= max_scaling;
-            last_output_horizontal_ = output_vec_horizontal;
-
 
             Eigen::Matrix<double, InputChannels::kInputVertical, 1> input_vec_vertical;
             for (int i = 0; i < InputChannels::kInputVertical; i++) {
@@ -238,20 +236,6 @@ namespace hippo_control {
                                                    -thruster_models_[ThrustDirection::backward].deadzone_minimum,
                                                    thruster_models_[ThrustDirection::forward].deadzone_minimum,
                                                    limit_min, limit_max, input_vec_vertical, last_output_vertical_);
-            // scale linear to maximum, if any of the thrusters saturates => if thruster saturates during deadzone
-            // shifting, algorithm is aborted for this scaling direction, however the instead returned minimum norm
-            // solution could still be infeasible
-            max_scaling = 1.0;
-            for (int i = 0; i < kOutputVertical; ++i) {
-              double thrust = abs(output_vec_vertical(i));
-              if (output_vec_vertical(i) >= 0) {
-                max_scaling = std::max(max_scaling, thrust / abs(limit_max));
-              } else {
-                max_scaling = std::max(max_scaling, thrust / abs(limit_min));
-              }
-            }
-            output_vec_vertical /= max_scaling;
-            last_output_vertical_ = output_vec_vertical;
 
 
             // write back into outputs:
@@ -261,6 +245,9 @@ namespace hippo_control {
             for (int i = 0; i < kOutputVertical; i++) {
               outputs_[kOutputIdxsVertical[i]].total = output_vec_vertical[i];
             }
+            last_output_horizontal_ = output_vec_horizontal;
+            last_output_vertical_ = output_vec_vertical;
+
           } else {  // no dead zone compensation desired
             for (int i_out = 0; i_out < kOutputChannels; ++i_out) {
               for (int i_in = 0; i_in < InputChannels::kCount; ++i_in) {
@@ -272,6 +259,8 @@ namespace hippo_control {
             }
           }
 
+          // scaling factor to scale the maximum output to 1.0, if any output is > 1.0
+          double scaling = 1.0;
           for (int i_out = 0; i_out < kOutputChannels; ++i_out) {
             double thrust = abs(outputs_[i_out].total);
 
